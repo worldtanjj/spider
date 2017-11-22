@@ -8,12 +8,12 @@ import (
 	"math/rand"
 	"net/http"
 	"regexp"
-	"runtime"
 	"strings"
 	"time"
 )
 
 var (
+	host       = "http://www.sihu888.com/"
 	urlChannel = make(chan string, 1)
 	r          = rand.New(rand.NewSource(time.Now().UnixNano()))
 	userAgent  = []string{"Mozilla/5.0 (compatible, MSIE 10.0, Windows NT, DigExt)",
@@ -32,14 +32,16 @@ var (
 		"MQQBrowser/26 Mozilla/5.0 (Linux, U, Android 2.3.7, zh-cn, MB200 Build/GRJ22, CyanogenMod-7) AppleWebKit/533.1 (KHTML, like Gecko) Version/4.0 Mobile Safari/533.1",
 	}
 	atagRegExp = regexp.MustCompile(`<a[^>]+[(href)|(HREF)]\s*\t*\n*=\s*\t*\n*[(".+")|('.+')][^>]*>[^<]*</a>`) //以Must前缀的方法或函数都是必须保证一定能执行成功的,否则将引发一次panic
+	validMap   = make(map[string]string)
 )
 
 func main() {
-	go Spy("https://msdn.itellyou.cn/")
-	for url := range urlChannel {
-		fmt.Println("routines num = ", runtime.NumGoroutine(), " chan len = ", len(urlChannel))
-		go Spy(url)
-	}
+
+	Spy(host)
+	// for url := range urlChannel {
+	// 	fmt.Println("routines num = ", runtime.NumGoroutine(), " chan len = ", len(urlChannel))
+	// 	go Spy(url)
+	// }
 }
 
 func Spy(url string) {
@@ -62,15 +64,24 @@ func Spy(url string) {
 		defer body.Close()
 		bodyByte, _ := ioutil.ReadAll(body)
 		resStr := string(bodyByte)
+		//获取该页面内容
+		if strings.Contains(url, "/video/play") {
+
+		}
+
+		//获取该页面下的链接
 		atag := atagRegExp.FindAllString(resStr, -1)
 		for _, a := range atag {
 			href, _ := GetHref(a)
-			if strings.Contains(href, "article/details/") {
-				fmt.Println("★", href)
-			} else {
-				fmt.Println("□", href)
+			if strings.Contains(href, host) {
+				_, exist := validMap[href]
+				if !exist {
+					validMap[href] = ""
+					// urlChannel <- href
+				}
+
 			}
-			urlChannel <- href
+			// urlChannel <- href
 		}
 	}
 }
