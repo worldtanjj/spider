@@ -1,14 +1,13 @@
 package main
 
 import (
-	"encoding/xml"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"math/rand"
 	"net/http"
 	"regexp"
-	"strings"
+	"sync"
 	"time"
 )
 
@@ -31,12 +30,26 @@ var (
 		"Mozilla/5.0 (iPhone, U, CPU iPhone OS 4_3_3 like Mac OS X, en-us) AppleWebKit/533.17.9 (KHTML, like Gecko) Version/5.0.2 Mobile/8J2 Safari/6533.18.5",
 		"MQQBrowser/26 Mozilla/5.0 (Linux, U, Android 2.3.7, zh-cn, MB200 Build/GRJ22, CyanogenMod-7) AppleWebKit/533.1 (KHTML, like Gecko) Version/4.0 Mobile Safari/533.1",
 	}
-	atagRegExp = regexp.MustCompile(`<a[^>]+[(href)|(HREF)]\s*\t*\n*=\s*\t*\n*[(".+")|('.+')][^>]*>[^<]*</a>`) //以Must前缀的方法或函数都是必须保证一定能执行成功的,否则将引发一次panic
-	validMap   = make(map[string]string)
+	// atagRegExp = regexp.MustCompile(`<a[^>]+[(href)|(HREF)]\s*\t*\n*=\s*\t*\n*[(".+")|('.+')][^>]*>[^<]*</a>`) //以Must前缀的方法或函数都是必须保证一定能执行成功的,否则将引发一次panic
+	detailsExp = regexp.MustCompile(`<a[^>]href=['"](.*)((/video/play.*?)-(\d+).*?)["'][.\s\S]*?src=["'](.*?)(/\d.*?)["']\s`)
+	listExp    = regexp.MustCompile(`<a[^>]href=['"](.*list.*?)["']`)
+	itemExp    = regexp.MustCompile(`id="d_picTit">(.*)</span>`)
+	excutedMap = sync.Map{} //爬取过的详情页
+	listRecord = sync.Map{} //已经爬取过的列表页
 )
 
-func main() {
+type Data struct {
+	domainCat string //代号 tuantuan
+	domain    string //host
+	url       string //视频地址 - host
+	oid       string //视频id
+	name      string
+	picDomain string    //图片host
+	pic       string    //图片地址 - host
+	date      time.Time //爬取时间
+}
 
+func main() {
 	Spy(host)
 	// for url := range urlChannel {
 	// 	fmt.Println("routines num = ", runtime.NumGoroutine(), " chan len = ", len(urlChannel))
@@ -64,51 +77,62 @@ func Spy(url string) {
 		defer body.Close()
 		bodyByte, _ := ioutil.ReadAll(body)
 		resStr := string(bodyByte)
-		//获取该页面内容
-		if strings.Contains(url, "/video/play") {
 
+		//列表内数据
+		details := detailsExp.FindAllStringSubmatch(resStr, -1)
+		for _, detail := range details {
+			var domain = detail[1]
+			var url = detail[2]
+			var oid = detail[4]
+			var picDomain = detail[5]
+			var pic = detail[6]
+
+			var data = &Data{
+				domain:    domain,
+				url:       url,
+				picDomain: picDomain,
+				pic:       pic,
+				oid:       oid,
+			}
+			_, ok := excutedMap.LoadOrStore(domain+url, data)
+			if ok && len(domain+url) != 0 {
+				continue
+			}
+			if len(domain) == 0 || len(url) == 0 || len(picDomain) == 0 || len(pic) == 0 || len(oid) == 0 {
+				fmt.Println("detailsExp匹配失败:", domain+url)
+				continue
+			}
+			urlChannel <- domain + url
 		}
 
-		//获取该页面下的链接
-		atag := atagRegExp.FindAllString(resStr, -1)
-		for _, a := range atag {
-			href, _ := GetHref(a)
-			if strings.Contains(href, host) {
-				_, exist := validMap[href]
-				if !exist {
-					validMap[href] = ""
-					// urlChannel <- href
-				}
-
+		//爬取列表页
+		lists := listExp.FindAllStringSubmatch(resStr, -1)
+		for _, list := range lists {
+			var url = list[1]
+			if len(url) == 0 {
+				continue
 			}
-			// urlChannel <- href
+			//跳过已经爬取过的list列表页
+			if _, ok := listRecord.LoadOrStore(url, true); ok {
+				continue
+			}
+			urlChannel <- url
+		}
+
+		//爬取详情页
+		items := itemExp.FindAllStringSubmatch(resStr, -1)
+		for _, item := range items {
+			var name = item[1]
+			if len(name) == 0 {
+				continue
+			}
+
+			//补全 视频名称与链接地址
+
 		}
 	}
 }
 
 func GetRandomUserAgent() string {
 	return userAgent[r.Intn(len(userAgent))]
-}
-func GetHref(atag string) (href, content string) {
-	inputReader := strings.NewReader(atag)
-	decoder := xml.NewDecoder(inputReader)
-	for t, err := decoder.Token(); err == nil; t, err = decoder.Token() {
-		switch token := t.(type) {
-		case xml.StartElement:
-			for _, attr := range token.Attr {
-				attrName := attr.Name.Local
-				attrValue := attr.Value
-				if strings.EqualFold(attrName, "href") || strings.EqualFold(attrName, "HREF") {
-					href = attrValue
-				}
-			}
-		case xml.EndElement:
-		case xml.CharData:
-			content = string([]byte(token))
-		default:
-			href = ""
-			content = ""
-		}
-	}
-	return href, content
 }
