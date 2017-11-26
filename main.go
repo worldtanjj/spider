@@ -35,6 +35,7 @@ var (
 		"Mozilla/5.0 (iPhone, U, CPU iPhone OS 4_3_3 like Mac OS X, en-us) AppleWebKit/533.17.9 (KHTML, like Gecko) Version/5.0.2 Mobile/8J2 Safari/6533.18.5",
 		"MQQBrowser/26 Mozilla/5.0 (Linux, U, Android 2.3.7, zh-cn, MB200 Build/GRJ22, CyanogenMod-7) AppleWebKit/533.1 (KHTML, like Gecko) Version/4.0 Mobile Safari/533.1",
 	}
+	// atagRegExp = regexp.MustCompile(`<a[^>]+[(href)|(HREF)]\s*\t*\n*=\s*\t*\n*[(".+")|('.+')][^>]*>[^<]*</a>`) //以Must前缀的方法或函数都是必须保证一定能执行成功的,否则将引发一次panic
 	detailsExp = regexp.MustCompile(`<a[^>]href=['"](.*)((/video/play.*?)-(\d+).*?)["'][.\s\S]*?src=["'](.*?)(/\d.*?)["']\s`)
 	listExp    = regexp.MustCompile(`<a[^>]href=['"](.*?video/list.*?)["']`)
 	itemExp    = regexp.MustCompile(`id="d_picTit">(.*)</span>[\s\S]+</iframe>.+</script>[\s\S]+?<iframe.+src=["'](.+?)["']`)
@@ -69,13 +70,15 @@ func main() {
 	session.SetMode(mgo.Monotonic, true)
 
 	tasks.Add(1)
+	// go func() {
 	go Spy(host)
 	for url := range urlChannel {
 		tasks.Add(1)
-		// fmt.Println("routines num = ", runtime.NumGoroutine(), " chan len = ", len(urlChannel))
 		go Spy(url)
 	}
+	// }()
 	tasks.Wait()
+	close(urlChannel)
 	fmt.Println("执行完毕")
 	//把爬取过的detail地址与list地址写入io
 	WriteInfoTxt()
@@ -90,7 +93,7 @@ func Spy(url string) {
 	defer tasks.Done()
 
 	fmt.Println("正在爬取: ", url, "chan len =:", len(urlChannel))
-	c := session.DB("mydb").C("spider")
+	c := session.DB("mydb").C("spider1")
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
