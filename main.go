@@ -70,13 +70,13 @@ func main() {
 	session.SetMode(mgo.Monotonic, true)
 
 	tasks.Add(1)
-	// go func() {
-	go Spy(host)
-	for url := range urlChannel {
-		tasks.Add(1)
-		go Spy(url)
-	}
-	// }()
+	go func() {
+		go Spy(host)
+		for url := range urlChannel {
+			tasks.Add(1)
+			go Spy(url)
+		}
+	}()
 	tasks.Wait()
 	close(urlChannel)
 	fmt.Println("执行完毕")
